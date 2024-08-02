@@ -18,11 +18,16 @@ public class EmailService {
 
 	@Async
 	public void sendEmail(String receiver, String subject, String body) {
-		SimpleMailMessage message = new SimpleMailMessage();
-		message.setFrom(ConfigurationManager.getProperty(PropertyConstants.senderEmailAddress));
-		message.setTo(receiver);
-		message.setSubject(subject);
-		message.setText(body);
-		mailSender.send(message);
+		try {
+			SimpleMailMessage message = new SimpleMailMessage();
+			message.setFrom(ConfigurationManager.getProperty(PropertyConstants.senderEmailAddress));
+			message.setTo(receiver);
+			message.setSubject(subject);
+			message.setText(body);
+			mailSender.send(message);
+		}
+		catch (Exception e) {
+			throw e;
+		}
 	}
 }
