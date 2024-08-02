@@ -7,6 +7,11 @@ public class EncryptedKeyGenericResponse {
 	public String getEncryptedKey() {
 		return encryptedKey;
 	}
+	public EncryptedKeyGenericResponse(String encryptedKey, String comment)
+	{
+		this.encryptedKey = encryptedKey;
+		this.comment = comment;
+	}
 	public void setEncryptedKey(String encryptedKey) {
 		this.encryptedKey = encryptedKey;
 	}

@@ -1,9 +1,14 @@
 package com.PayVang.Mobile.Domain;
 
 import java.time.LocalDateTime;
-import java.util.Random;
 
-import org.springframework.beans.factory.annotation.Autowired;
+import com.PayVang.Mobile.Constants.EmailMessage;
+import com.PayVang.Mobile.Constants.ErrorConstants;
+import com.PayVang.Mobile.Constants.SuccessMessage;
+import com.PayVang.Mobile.CustomExceptions.InternalServerException;
+import com.PayVang.Mobile.DataAccess.Models.ForgotPasswordStore;
+import com.PayVang.Mobile.DataAccess.Repositories.ForgotPasswordStoreRepository;
+import com.PayVang.Mobile.Models.*;
 import org.springframework.stereotype.Service;
 
 import com.PayVang.Mobile.CustomExceptions.InvalidRequestException;
@@ -11,12 +16,6 @@ import com.PayVang.Mobile.CustomExceptions.UnauthorizedException;
 import com.PayVang.Mobile.DataAccess.Models.LoginDetails;
 import com.PayVang.Mobile.DataAccess.Repositories.LoginDetailRepository;
 import com.PayVang.Mobile.DataAccess.Repositories.UserRepository;
-import com.PayVang.Mobile.Models.ChangePasswordRequest;
-import com.PayVang.Mobile.Models.EncryptedKeyGenericResponse;
-import com.PayVang.Mobile.Models.ForgotPasswordRequest;
-import com.PayVang.Mobile.Models.LoginRequest;
-import com.PayVang.Mobile.Models.TriggerOtpRequest;
-import com.PayVang.Mobile.Models.VerifyLoginRequest;
 import com.PayVang.Mobile.Util.AESEncryptUtility;
 import com.PayVang.Mobile.Util.PasswordHasher;
 import com.PayVang.Mobile.Util.UserStatusType;
@@ -24,25 +23,27 @@ import com.PayVang.Mobile.Util.UserStatusType;
 @Service
 public class AccountsService {
 	
-    private EmailService emailService;
-    private OtpService otpService;
-    private LoginDetailRepository loginDetailRepository;
-    private UserRepository userRepository;   
-    
-    public AccountsService(EmailService emailService, OtpService otpService, LoginDetailRepository loginDetailRepository,
-    		UserRepository userRepository) 
+    private final EmailService emailService;
+    private final LoginDetailRepository loginDetailRepository;
+    private final UserRepository userRepository;
+	private final ForgotPasswordStoreRepository forgotPasswordStoreRepository;
+    private final EmailMessage emailMessage;
+
+    public AccountsService(EmailService emailService, LoginDetailRepository loginDetailRepository,
+    		UserRepository userRepository, EmailMessage emailMessage, ForgotPasswordStoreRepository forgotPasswordStoreRepository)
     {
         this.emailService = emailService;
-        this.otpService = otpService;
         this.loginDetailRepository = loginDetailRepository;
         this.userRepository = userRepository;
+		this.emailMessage = emailMessage;
+		this.forgotPasswordStoreRepository = forgotPasswordStoreRepository;
     }
 
     public EncryptedKeyGenericResponse authenticateUser(LoginRequest loginRequest) {
     	
     	if(loginRequest.getUsername() == null || loginRequest.getPassword() == null)
     	{
-    		throw new InvalidRequestException("Incorrect Payload, Please provide the username and password.");
+    		throw new InvalidRequestException(ErrorConstants.usernamePasswordNotFound);
     	}
     	
     	var username = loginRequest.getUsername();
@@ -51,7 +52,7 @@ public class AccountsService {
     	var user = userRepository.findByEmailId(username);
     	if (user == null)
     	{
-    		throw new UnauthorizedException("Username is Invalid, Please Try Again.");
+    		throw new UnauthorizedException(ErrorConstants.usernameInvalid);
     	}
     	
     	String userStatus = user.getUserStatus().getStatus();
@@ -59,7 +60,7 @@ public class AccountsService {
     	
 		if (!userStatus.equals(activeStatus))
 		{
-			throw new UnauthorizedException("User status is either inactive, Blocked or suspended");
+			throw new UnauthorizedException(ErrorConstants.userInactive);
 		}
 		
     	// write password extract logic
@@ -89,24 +90,22 @@ public class AccountsService {
             loginDetailRepository.save(loginDetail);
             
             // send email for OTP, TODO: make template for it
-            emailService.sendEmail(username, "OTP for login in PayV Mobile", "Here is your OTP(One Time Password) for"
-            		+ " logging into PayV Mobile - " + otp);
+
+			var emailMessage = this.emailMessage.loginOtpMessage();
+            emailService.sendEmail(username, emailMessage.subject, emailMessage.body + otp);
             
             String encryptedUsername = AESEncryptUtility.encrypt(username);
-            EncryptedKeyGenericResponse response = new EncryptedKeyGenericResponse();
-            response.setEncryptedKey(encryptedUsername);
-            response.setComment("OTP is sent to customer's email address.");
-            return response;
+			return new EncryptedKeyGenericResponse(encryptedUsername, SuccessMessage.otpSentToEmail);
         }
         else {
-        	throw new UnauthorizedException("Incorrect Password! Please try again.");
+        	throw new UnauthorizedException(ErrorConstants.incorrectPassword);
 		}
     }
     
     public String verifyLogin(VerifyLoginRequest verifyLoginRequest) {
     	if(verifyLoginRequest.getEncryptedKey() == null || verifyLoginRequest.getOTP() == null)
     	{
-    		throw new InvalidRequestException("Incorrect Payload, Please provide the encrypted key and OTP.");
+    		throw new InvalidRequestException(ErrorConstants.otpEncryptedKeyNotFound);
     	}
     	
     	try {
@@ -114,50 +113,92 @@ public class AccountsService {
     		 String otp = verifyLoginRequest.getOTP();
     		 
     		 if(decryptedUsername == null) {
-    			 throw new UnauthorizedException("The encrypted username is incorrect.");
+    			 throw new UnauthorizedException(ErrorConstants.incorrectEncryptedUsername);
     		 }
     		 
     		 var loginDetails = loginDetailRepository.findByUsername(decryptedUsername);
     		 
     		 
     		 if(loginDetails == null) {
-    			 throw new UnauthorizedException("User doesn't exists.");
+    			 throw new UnauthorizedException(ErrorConstants.userDoesNotExists);
     		 }
     		 
     		 
     		 if(!otp.equals(loginDetails.getOtp()))
     		 {
-    			 throw new UnauthorizedException("OTP is not correct.");
+    			 throw new UnauthorizedException(ErrorConstants.incorrectOtp);
     		 }
     		 
     		 if(loginDetails.getExpiryTime().isBefore(LocalDateTime.now()))
     		 {
-    			 throw new UnauthorizedException("OTP has expired.");
+    			 throw new UnauthorizedException(ErrorConstants.otpHasExpired);
     		 }
     		 
-    		 return "Successfully logged in";
+    		 return SuccessMessage.loginSuccess;
     	}
     	catch (Exception e) {
     		throw e;
 		}
     }
     
-    public EncryptedKeyGenericResponse forgotPassword(ForgotPasswordRequest forgotPasswordRequest) {
+    public MessageResponse forgotPassword(ForgotPasswordRequest forgotPasswordRequest) {
     	var username = forgotPasswordRequest.getUsername();
     	
     	var user = userRepository.findByEmailId(username);
     	if(user == null)
     	{
-    		throw new InvalidRequestException("Invalid Username");
+    		throw new InternalServerException(ErrorConstants.usernameInvalid);
     	}
-    	TriggerOtpRequest otpRequest = new TriggerOtpRequest();
-    	otpRequest.setRecipient(username);
-    	otpRequest.setEmailBodyCore("Password Reset");
-    	otpRequest.setEmailSubject("Otp for resetting Pay Vang Mobile app password");
+		var encryptedUsername = AESEncryptUtility.encrypt(username);
+		LocalDateTime triggeredTime = LocalDateTime.now();
+
+		ForgotPasswordStore forgotPasswordEntry = forgotPasswordStoreRepository.findByEncryptedUsername(encryptedUsername);
+
+		if (forgotPasswordEntry == null) {
+			// Create new login detail entry
+			forgotPasswordEntry = new ForgotPasswordStore();
+			forgotPasswordEntry.setEncryptedUsername(encryptedUsername);
+			forgotPasswordEntry.setTriggeredTime(triggeredTime);
+		} else {
+			// Update existing login detail entry
+			forgotPasswordEntry.setEncryptedUsername(encryptedUsername);
+			forgotPasswordEntry.setTriggeredTime(triggeredTime);
+		}
+
+		// Save login detail
+		forgotPasswordStoreRepository.save(forgotPasswordEntry);
+
+		var emailMessage = this.emailMessage.forgotPasswordRedirectionMessage("3",encryptedUsername);
+    	emailService.sendEmail(user.getEmailId(), emailMessage.subject, emailMessage.body);
     	
-    	return otpService.triggerOtp(otpRequest);
+    	return new MessageResponse(SuccessMessage.passwordUpdateLinkSent);
     }
-    
+
+	public EncryptedKeyGenericResponse verifyForgotPasswordLink(String encryptedUsername, int expiryMinutes)
+	{
+		if(expiryMinutes != 3)
+		{
+			throw new InternalServerException(ErrorConstants.defaultForgotPasswordExpiryAltered);
+		}
+		try {
+			var forgotPasswordEntry = forgotPasswordStoreRepository.findByEncryptedUsername(encryptedUsername);
+			if(forgotPasswordEntry == null)
+			{
+				throw new InternalServerException(ErrorConstants.forgotPasswordEntryNotFound);
+			}
+			LocalDateTime expiryTime = forgotPasswordEntry.getTriggeredTime().plusMinutes(expiryMinutes);
+			if (expiryTime.isBefore(LocalDateTime.now()))
+			{
+				throw new InternalServerException(ErrorConstants.forgotPasswordLinkExpired);
+			}
+			return new EncryptedKeyGenericResponse(encryptedUsername, SuccessMessage.linkValidated);
+		}
+		catch (Exception e)
+		{
+			throw e;
+		}
+	}
+
     public String changePassword(ChangePasswordRequest changePasswordRequest) {
     	try {
 	    	var encryptedUserName = changePasswordRequest.encryptedUserName;
@@ -166,12 +207,12 @@ public class AccountsService {
 	    	var user = userRepository.findByEmailId(username);
 	    	if(user == null)
 	    	{
-	    		throw new InvalidRequestException("Invalid encrypted username.");
+	    		throw new InternalServerException(ErrorConstants.incorrectEncryptedUsername);
 	    	}
 	    	
 	    	String newPassword = PasswordHasher.hashPassword(changePasswordRequest.getNewPassword(),user.getAppId());
 	    	userRepository.updatePasswordByEmail(username, newPassword);
-	    	return "Password reset successfull";
+	    	return SuccessMessage.passwordResetSuccessful;
     	}
     	catch (Exception e) {
 			throw e;
