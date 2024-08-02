@@ -19,5 +19,10 @@ public ResponseEntity<String> handleCustomException(InvalidRequestException ex) 
    return new ResponseEntity<>(ex.getMessage(), HttpStatus.BAD_REQUEST);
 }
 
+@ExceptionHandler(InternalServerException.class)
+public ResponseEntity<String> handleCustomException(InternalServerException ex) {
+   return new ResponseEntity<>(ex.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
+}
+
 // Add more exception handlers as needed for other custom exceptions
 }

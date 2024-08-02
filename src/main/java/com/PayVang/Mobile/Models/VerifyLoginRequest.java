@@ -10,7 +10,7 @@ public class VerifyLoginRequest {
         return encryptedKey;
     }
 
-    public void setencryptedKey(String encryptedKey) {
+    public void setEncryptedKey(String encryptedKey) {
         this.encryptedKey = encryptedKey;
     }
 

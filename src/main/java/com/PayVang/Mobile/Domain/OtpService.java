@@ -3,6 +3,9 @@ package com.PayVang.Mobile.Domain;
 import java.time.LocalDateTime;
 import java.util.Random;
 
+import com.PayVang.Mobile.Constants.ErrorConstants;
+import com.PayVang.Mobile.Constants.SuccessMessage;
+import com.PayVang.Mobile.CustomExceptions.InternalServerException;
 import org.springframework.stereotype.Service;
 
 import com.PayVang.Mobile.CustomExceptions.UnauthorizedException;
@@ -16,8 +19,8 @@ import com.PayVang.Mobile.Util.AESEncryptUtility;
 @Service
 public class OtpService {
 	
-    private OtpRepository otpRepository;   
-    private EmailService emailService;
+    private final OtpRepository otpRepository;
+    private final EmailService emailService;
     
     public OtpService(OtpRepository otpRepository, EmailService emailService)
     {
@@ -56,10 +59,7 @@ public class OtpService {
          		+ triggerOtpRequest.emailBodyCore + " " + otp);
          
          String encryptedRecipient = AESEncryptUtility.encrypt(recipient);
-         EncryptedKeyGenericResponse response = new EncryptedKeyGenericResponse();
-         response.setComment("OTP is sent to customer's email address.");
-         response.setEncryptedKey(encryptedRecipient);
-         return response;
+		 return new EncryptedKeyGenericResponse(encryptedRecipient, SuccessMessage.otpSentToEmail);
     	}
     	catch (Exception e) {
 			throw e;
@@ -75,31 +75,28 @@ public class OtpService {
    		 	String otp = validateOtpRequest.getOTP();
    		 
 	   		 if(decryptedRecipient == null) {
-	   			 throw new UnauthorizedException("Invalid Recipient");
+	   			 throw new InternalServerException(ErrorConstants.invalidRecipient);
 	   		 }
 	   		 
 	   		 var loginDetails = otpRepository.findByRecipient(decryptedRecipient);
 	   		 
 	   		 
 	   		 if(loginDetails == null) {
-	   			 throw new UnauthorizedException("Please trigger otp again");
+	   			 throw new InternalServerException(ErrorConstants.retryTriggerOtp);
 	   		 }
 	   		 
 	   		 
 	   		 if(!otp.equals(loginDetails.getOtp()))
 	   		 {
-	   			 throw new UnauthorizedException("OTP is not correct");
+	   			 throw new UnauthorizedException(ErrorConstants.incorrectOtp);
 	   		 }
 	   		 
 	   		 if(loginDetails.getExpiryTime().isBefore(LocalDateTime.now()))
 	   		 {
-	   			 throw new UnauthorizedException("OTP has expired");
+	   			 throw new UnauthorizedException(ErrorConstants.otpHasExpired);
 	   		 }
-	   		 
-	   		EncryptedKeyGenericResponse response = new EncryptedKeyGenericResponse();
-	   		response.setEncryptedKey(encryptedRecipient);
-	   		response.setComment("OTP is successfully validated.");
-	   		return response;
+
+			return new EncryptedKeyGenericResponse(encryptedRecipient, SuccessMessage.otpValidated);
 	   	}
 	   	catch (Exception e) 
 		{

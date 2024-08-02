@@ -8,6 +8,7 @@ import org.springframework.scheduling.annotation.EnableAsync;
 @EnableAsync
 public class Application {
 
+	// PayVang.Mobile entry point
 	public static void main(String[] args) {
 		SpringApplication.run(Application.class, args);
 	}
