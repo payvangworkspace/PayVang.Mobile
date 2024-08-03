@@ -1,6 +1,6 @@
 package com.PayVang.Mobile.CustomExceptions;
 
-public class UnauthorizedException extends RuntimeException {
+public class UnauthorizedException extends RuntimeException{
 	
 	private static final long serialVersionUID = 3L;
 

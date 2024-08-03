@@ -15,4 +15,5 @@ public class ErrorConstants {
     public static final String forgotPasswordLinkExpired = "The link to update password has expired";
     public static final String invalidRecipient = "Invalid Recipient";
     public static final String retryTriggerOtp = "Please trigger otp again";
+    public static final String invalidRequestBody = "Request body is not correct.";
 }
