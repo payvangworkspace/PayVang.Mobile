@@ -1,6 +1,7 @@
 package com.PayVang.Mobile.Domain;
 
 import java.time.LocalDateTime;
+import java.util.Collections;
 
 import com.PayVang.Mobile.Constants.EmailMessage;
 import com.PayVang.Mobile.Constants.ErrorConstants;
@@ -9,6 +10,7 @@ import com.PayVang.Mobile.CustomExceptions.InternalServerException;
 import com.PayVang.Mobile.DataAccess.Models.ForgotPasswordStore;
 import com.PayVang.Mobile.DataAccess.Repositories.ForgotPasswordStoreRepository;
 import com.PayVang.Mobile.Models.*;
+import com.PayVang.Mobile.Util.JwtUtil;
 import org.springframework.stereotype.Service;
 
 import com.PayVang.Mobile.CustomExceptions.InvalidRequestException;
@@ -20,24 +22,46 @@ import com.PayVang.Mobile.Util.AESEncryptUtility;
 import com.PayVang.Mobile.Util.PasswordHasher;
 import com.PayVang.Mobile.Util.UserStatusType;
 
+// security
+import org.springframework.security.core.userdetails.User;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.security.core.userdetails.UserDetailsService;
+
 @Service
-public class AccountsService {
+public class AccountsService implements UserDetailsService {
 	
     private final EmailService emailService;
     private final LoginDetailRepository loginDetailRepository;
     private final UserRepository userRepository;
 	private final ForgotPasswordStoreRepository forgotPasswordStoreRepository;
     private final EmailMessage emailMessage;
+	private final JwtUtil jwtUtil;
 
     public AccountsService(EmailService emailService, LoginDetailRepository loginDetailRepository,
-    		UserRepository userRepository, EmailMessage emailMessage, ForgotPasswordStoreRepository forgotPasswordStoreRepository)
+						   UserRepository userRepository,
+						   EmailMessage emailMessage,
+						   ForgotPasswordStoreRepository forgotPasswordStoreRepository,
+						   JwtUtil jwtUtil)
     {
         this.emailService = emailService;
         this.loginDetailRepository = loginDetailRepository;
         this.userRepository = userRepository;
 		this.emailMessage = emailMessage;
 		this.forgotPasswordStoreRepository = forgotPasswordStoreRepository;
+		this.jwtUtil = jwtUtil;
     }
+
+	@Override
+	public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+		// Fetch user from the database using the UserRepository
+		var user = userRepository.findByEmailId(username);
+		if (user == null) {
+			throw new UsernameNotFoundException("User not found");
+		}
+		// Override - Return a UserDetails object containing the user's information without authorities
+		return new User(user.getEmailId(), user.getPassword(), Collections.emptyList());
+	}
 
     public EncryptedKeyGenericResponse authenticateUser(LoginRequest loginRequest) {
     	
@@ -102,7 +126,7 @@ public class AccountsService {
 		}
     }
     
-    public String verifyLogin(VerifyLoginRequest verifyLoginRequest) {
+    public VerifyLoginResponse verifyLogin(VerifyLoginRequest verifyLoginRequest) {
     	if(verifyLoginRequest.getEncryptedKey() == null || verifyLoginRequest.getOTP() == null)
     	{
     		throw new InvalidRequestException(ErrorConstants.otpEncryptedKeyNotFound);
@@ -133,8 +157,9 @@ public class AccountsService {
     		 {
     			 throw new UnauthorizedException(ErrorConstants.otpHasExpired);
     		 }
-    		 
-    		 return SuccessMessage.loginSuccess;
+
+			 var accessToken = jwtUtil.generateToken(decryptedUsername);
+    		 return new VerifyLoginResponse(accessToken,SuccessMessage.loginSuccess);
     	}
     	catch (Exception e) {
     		throw e;

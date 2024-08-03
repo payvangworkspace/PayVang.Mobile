@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.*;
 import com.PayVang.Mobile.Domain.AccountsService;
 
 @RestController
+@RequestMapping("/api/accounts")
 public class AccountsController {
 
     @Autowired
@@ -18,7 +19,7 @@ public class AccountsController {
     }
 
     @PostMapping("/verifylogin")
-    public String login(@RequestBody VerifyLoginRequest verifyLoginRequest) {
+    public VerifyLoginResponse login(@RequestBody VerifyLoginRequest verifyLoginRequest) {
         return accountsService.verifyLogin(verifyLoginRequest);
     }
 
